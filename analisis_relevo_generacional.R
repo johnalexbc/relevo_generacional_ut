@@ -3,7 +3,6 @@
 # ============================================================
 # Script: Análisis descriptivo + confiabilidad + CFA
 # Proyecto: Relevo Generacional
-# Versión ajustada para entrega completa en PR
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -165,19 +164,6 @@ tabla1_total <- map_dfr(demograficas, function(v) {
 
 tabla1_largo <- bind_rows(tabla1, tabla1_total)
 
-# Nota: mantener este bloque en dos pasos evita errores de edición tipo "%>%<-"
-tabla1_final <- mutate(
-  tabla1_largo,
-  porcentaje = percent(porcentaje, accuracy = 0.1),
-  valor = as.character(valor)
-)
-
-tabla1_final <- arrange(
-  tabla1_final,
-  variable,
-  factor(grupo, levels = c("Rural", "No rural", "No especifica", "Total")),
-  desc(n)
-)
 tabla1_final <- tabla1_largo %>%
 tabla1_final <- bind_rows(tabla1, tabla1_total) %>%
   mutate(
