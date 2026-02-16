@@ -106,6 +106,10 @@ save_plot <- function(p, filename, width = 11, height = 7) {
   )
 }
 
+fmt_n_pct <- function(n, pct) {
+  paste0(n, " (", percent(pct, accuracy = 0.1), ")")
+}
+
 # ----------------------------
 # 4) Carga y validaciones de datos
 # ----------------------------
@@ -158,6 +162,9 @@ tabla1_total <- map_dfr(demograficas, function(v) {
     select(variable, grupo, valor, n, porcentaje)
 })
 
+tabla1_largo <- bind_rows(tabla1, tabla1_total)
+
+tabla1_final <- tabla1_largo %>%
 tabla1_final <- bind_rows(tabla1, tabla1_total) %>%
   mutate(
     porcentaje = percent(porcentaje, accuracy = 0.1),
@@ -165,6 +172,31 @@ tabla1_final <- bind_rows(tabla1, tabla1_total) %>%
   ) %>%
   arrange(variable, factor(grupo, levels = c("Rural", "No rural", "No especifica", "Total")), desc(n))
 
+write.csv(
+  tabla1_final,
+  file.path(output_dir, "tabla1_sociodemograficos.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Table 1 visible: columnas Rural / No rural / Total con n (p%)
+tabla1_wide <- tabla1_largo %>%
+  filter(grupo %in% c("Rural", "No rural", "Total")) %>%
+  mutate(valor_np = fmt_n_pct(n, porcentaje)) %>%
+  select(variable, categoria = valor, grupo, valor_np) %>%
+  pivot_wider(names_from = grupo, values_from = valor_np) %>%
+  mutate(variable = str_to_title(variable)) %>%
+  select(Variable = variable, Categoría = categoria, Rural, `No rural`, Total)
+
+write.csv(
+  tabla1_wide,
+  file.path(output_dir, "tabla1_sociodemograficos_visible.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Plot sociodemográficos (etiquetas pequeñas y sin sobreposición)
+plot_demo_df <- tabla1_largo %>%
 write.csv(tabla1_final, file.path(output_dir, "tabla1_sociodemograficos.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 
 # Plot sociodemográficos
@@ -175,6 +207,16 @@ plot_demo_df <- bind_rows(tabla1, tabla1_total %>% mutate(porcentaje = as.numeri
   )
 
 p_demo <- ggplot(plot_demo_df, aes(x = fct_reorder(valor, n, .desc = TRUE), y = porcentaje, fill = grupo)) +
+  geom_col(position = position_dodge2(width = 0.8, preserve = "single", padding = 0.2), width = 0.68, alpha = 0.95) +
+  geom_text(
+    aes(label = ifelse(porcentaje < 0.03, "", percent(porcentaje, accuracy = 0.1))),
+    position = position_dodge2(width = 0.8, preserve = "single", padding = 0.2),
+    vjust = -0.25,
+    size = 2.2,
+    check_overlap = TRUE
+  ) +
+  facet_wrap(~variable, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.15))) +
   geom_col(position = position_dodge(width = 0.8), width = 0.72, alpha = 0.95) +
   geom_text(
     aes(label = percent(porcentaje, accuracy = 0.1)),
@@ -252,6 +294,33 @@ write.csv(
   fileEncoding = "UTF-8"
 )
 
+# Tabla visible por dimensión: n (p%)
+freq_dim_wide <- freq_dim_final %>%
+  filter(grupo %in% c("Rural", "No rural", "Total")) %>%
+  mutate(valor_np = fmt_n_pct(n, porcentaje)) %>%
+  select(dimension, respuesta, grupo, valor_np) %>%
+  pivot_wider(names_from = grupo, values_from = valor_np) %>%
+  select(Dimensión = dimension, Respuesta = respuesta, Rural, `No rural`, Total)
+
+write.csv(
+  freq_dim_wide,
+  file.path(output_dir, "descriptivos_dimensiones_visible.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Plot dimensiones (etiquetas pequeñas y sin sobreposición)
+p_dim <- ggplot(freq_dim_final, aes(x = respuesta, y = porcentaje, fill = grupo)) +
+  geom_col(position = position_dodge2(width = 0.85, preserve = "single", padding = 0.15), width = 0.7) +
+  geom_text(
+    aes(label = ifelse(porcentaje < 0.03, "", percent(porcentaje, accuracy = 0.1))),
+    position = position_dodge2(width = 0.85, preserve = "single", padding = 0.15),
+    vjust = -0.25,
+    size = 2.1,
+    check_overlap = TRUE
+  ) +
+  facet_wrap(~dimension, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.18))) +
 # Plot dimensiones
 p_dim <- ggplot(freq_dim_final, aes(x = respuesta, y = porcentaje, fill = grupo)) +
   geom_col(position = position_dodge(width = 0.85), width = 0.75) +
@@ -328,6 +397,12 @@ reliability_table <- bind_rows(reliability_by_dimension, reliability_total) %>%
     across(c(alpha, omega_total, omega_hierarchical), ~round(., 3))
   )
 
+write.csv(
+  reliability_table,
+  file.path(output_dir, "confiabilidad_alpha_omega.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
 write.csv(reliability_table, file.path(output_dir, "confiabilidad_alpha_omega.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 
 # ----------------------------
@@ -385,6 +460,33 @@ write.csv(indices_ajuste, file.path(output_dir, "cfa_indices_ajuste.csv"), row.n
 write.csv(cargas, file.path(output_dir, "cfa_cargas_factoriales.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 
 # ----------------------------
+# 9) Reportes Word
+# ----------------------------
+
+# 9.1 Reporte descriptivo visible
+doc_desc <- read_docx() %>%
+  body_add_par("Reporte descriptivo - Relevo generacional", style = "heading 1") %>%
+  body_add_par(format(Sys.time(), "%Y-%m-%d %H:%M"), style = "Normal") %>%
+  body_add_par("", style = "Normal") %>%
+  body_add_par("1) Table 1 sociodemográficos", style = "heading 2") %>%
+  body_add_par("Formato de celda: frecuencia absoluta (frecuencia relativa).", style = "Normal")
+
+ft_tabla1 <- flextable(tabla1_wide) %>% theme_booktabs() %>% autofit()
+
+doc_desc <- doc_desc %>%
+  body_add_flextable(ft_tabla1) %>%
+  body_add_par("", style = "Normal") %>%
+  body_add_par("2) Frecuencias por dimensión del instrumento", style = "heading 2") %>%
+  body_add_par("Formato de celda: frecuencia absoluta (frecuencia relativa).", style = "Normal")
+
+ft_dims <- flextable(freq_dim_wide) %>% theme_booktabs() %>% autofit()
+
+doc_desc <- doc_desc %>%
+  body_add_flextable(ft_dims)
+
+print(doc_desc, target = file.path(output_dir, "reporte_descriptivos_relevo.docx"))
+
+# 9.2 Reporte psicométrico
 # 9) Reporte Word (confiabilidad + CFA)
 # ----------------------------
 
