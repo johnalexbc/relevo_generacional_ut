@@ -39,6 +39,7 @@ dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
 # ----------------------------
 
 demograficas <- c("sexo", "rural", "semestre", "carrera", "universidad")
+
 items <- paste0("relevo_", 1:27)
 
 dimensiones <- list(
@@ -147,6 +148,7 @@ for (it in items) {
 
 tabla1 <- map_dfr(demograficas, ~freq_table(df, .x, "grupo"))
 
+# Agregar total
 tabla1_total <- map_dfr(demograficas, function(v) {
   df %>%
     mutate(valor = .data[[v]]) %>%
@@ -163,6 +165,7 @@ tabla1_total <- map_dfr(demograficas, function(v) {
 tabla1_largo <- bind_rows(tabla1, tabla1_total)
 
 tabla1_final <- tabla1_largo %>%
+tabla1_final <- bind_rows(tabla1, tabla1_total) %>%
   mutate(
     porcentaje = percent(porcentaje, accuracy = 0.1),
     valor = as.character(valor)
@@ -194,6 +197,10 @@ write.csv(
 
 # Plot sociodemográficos (etiquetas pequeñas y sin sobreposición)
 plot_demo_df <- tabla1_largo %>%
+write.csv(tabla1_final, file.path(output_dir, "tabla1_sociodemograficos.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+
+# Plot sociodemográficos
+plot_demo_df <- bind_rows(tabla1, tabla1_total %>% mutate(porcentaje = as.numeric(porcentaje))) %>%
   mutate(
     variable = str_to_title(variable),
     grupo = factor(grupo, levels = c("Rural", "No rural", "No especifica", "Total"))
@@ -210,6 +217,15 @@ p_demo <- ggplot(plot_demo_df, aes(x = fct_reorder(valor, n, .desc = TRUE), y = 
   ) +
   facet_wrap(~variable, scales = "free_x") +
   scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.15))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.72, alpha = 0.95) +
+  geom_text(
+    aes(label = percent(porcentaje, accuracy = 0.1)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.22,
+    size = 3
+  ) +
+  facet_wrap(~variable, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.13))) +
   scale_fill_brewer(type = "qual", palette = "Set2") +
   labs(
     title = "Perfil sociodemográfico de la muestra",
@@ -232,6 +248,7 @@ save_plot(p_demo, "plot_sociodemograficos.png", width = 13, height = 8)
 # 6) Descriptivos por dimensión (frecuencia de respuestas)
 # ----------------------------
 
+# Reorganizar ítems por dimensión
 long_items <- map_dfr(names(dimensiones), function(dim_name) {
   df %>%
     select(grupo, all_of(dimensiones[[dim_name]])) %>%
@@ -304,6 +321,17 @@ p_dim <- ggplot(freq_dim_final, aes(x = respuesta, y = porcentaje, fill = grupo)
   ) +
   facet_wrap(~dimension, scales = "free_x") +
   scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.18))) +
+# Plot dimensiones
+p_dim <- ggplot(freq_dim_final, aes(x = respuesta, y = porcentaje, fill = grupo)) +
+  geom_col(position = position_dodge(width = 0.85), width = 0.75) +
+  geom_text(
+    aes(label = percent(porcentaje, accuracy = 0.1)),
+    position = position_dodge(width = 0.85),
+    vjust = -0.25,
+    size = 2.8
+  ) +
+  facet_wrap(~dimension, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.16))) +
   scale_fill_brewer(type = "qual", palette = "Set2") +
   labs(
     title = "Distribución de respuestas por dimensión del instrumento",
@@ -375,6 +403,7 @@ write.csv(
   row.names = FALSE,
   fileEncoding = "UTF-8"
 )
+write.csv(reliability_table, file.path(output_dir, "confiabilidad_alpha_omega.csv"), row.names = FALSE, fileEncoding = "UTF-8")
 
 # ----------------------------
 # 8) CFA de 9 dimensiones
@@ -392,6 +421,7 @@ D8 =~ relevo_22 + relevo_23 + relevo_24
 D9 =~ relevo_25 + relevo_26 + relevo_27
 '
 
+# Usamos WLSMV (robusto para ítems ordinales tipo Likert)
 fit_cfa <- lavaan::cfa(
   model = modelo_cfa,
   data = df,
@@ -457,6 +487,9 @@ doc_desc <- doc_desc %>%
 print(doc_desc, target = file.path(output_dir, "reporte_descriptivos_relevo.docx"))
 
 # 9.2 Reporte psicométrico
+# 9) Reporte Word (confiabilidad + CFA)
+# ----------------------------
+
 doc <- read_docx() %>%
   body_add_par("Reporte psicométrico - Instrumento de relevo generacional", style = "heading 1") %>%
   body_add_par(format(Sys.time(), "%Y-%m-%d %H:%M"), style = "Normal") %>%
